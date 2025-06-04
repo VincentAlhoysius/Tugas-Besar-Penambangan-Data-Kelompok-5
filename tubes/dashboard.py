@@ -8,12 +8,12 @@ from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import joblib
 
 BASE_DIR = os.path.dirname(__file__)
+
 # -------------------------------------------------
 # Load data dan model (bisa modifikasi sesuai kebutuhan)
 @st.cache_data
 def load_data():
-    df = pd.read_csv('ecommerce_customer_data_custom_ratios.csv')
-    return df
+    return pd.read_csv(os.path.join(BASE_DIR, 'ecommerce_customer_data_custom_ratios.csv'))
 
 kmeans_model = joblib.load(os.path.join(BASE_DIR, 'kmeans_model.pkl'))
 logreg_model = joblib.load(os.path.join(BASE_DIR, 'logreg_model.pkl'))
@@ -23,8 +23,7 @@ scaler = joblib.load(os.path.join(BASE_DIR, 'scaler_logreg.pkl'))
 # Fungsi preprocessing & clustering
 @st.cache_data
 def preprocess_and_cluster(df):
-    from sklearn.preprocessing import LabelEncoder, StandardScaler
-    from sklearn.cluster import KMeans
+    from sklearn.preprocessing import StandardScaler
 
     # Pilih fitur untuk clustering
     unsupervised_df = df[['Total Purchase Amount', 'Product Price', 'Customer Age', 'Quantity']].copy()
@@ -43,47 +42,41 @@ def preprocess_and_cluster(df):
     unsupervised_df = remove_outliers_iqr(unsupervised_df, unsupervised_df.columns)
 
     # Scaling
-    scaler = StandardScaler()
-    scaled_features = scaler.fit_transform(unsupervised_df)
+    scaler_local = StandardScaler()
+    scaled_features = scaler_local.fit_transform(unsupervised_df)
 
-    # KMeans clustering
+    # KMeans clustering menggunakan model yang sudah dimuat
     clusters = kmeans_model.predict(scaled_features)
+    unsupervised_df = unsupervised_df.copy()  # hindari SettingWithCopyWarning
     unsupervised_df['Spending Cluster'] = clusters
 
-    # Gabungkan kembali ke df asli sesuai index
-    df = df.loc[unsupervised_df.index]
-    df['Spending Cluster'] = clusters
+    # Gabungkan kembali ke df asli sesuai index yang sudah di-filter outlier
+    df_clustered = df.loc[unsupervised_df.index].copy()
+    df_clustered['Spending Cluster'] = clusters
 
-    return df, kmeans
+    return df_clustered
 
 # -------------------------------------------------
 # Fungsi untuk model prediksi churn (gunakan hasil best_model)
 @st.cache_data
 def load_model_and_predict(df):
-    from sklearn.preprocessing import LabelEncoder, StandardScaler
-    from sklearn.linear_model import LogisticRegression
-    from imblearn.over_sampling import SMOTE
-    from sklearn.model_selection import train_test_split
+    from sklearn.preprocessing import LabelEncoder
     from sklearn.metrics import precision_score, recall_score, f1_score
 
-    supervised_df = df[['Total Purchase Amount', 'Product Price', 'Customer Age', 'Gender','Returns', 'Churn']].dropna()
+    supervised_df = df[['Total Purchase Amount', 'Product Price', 'Customer Age', 'Gender', 'Returns', 'Churn']].dropna().copy()
     le = LabelEncoder()
     supervised_df['Gender'] = le.fit_transform(supervised_df['Gender'])
-    X = supervised_df[['Total Purchase Amount', 'Product Price', 'Customer Age', 'Gender','Returns' ]]
+    X = supervised_df[['Total Purchase Amount', 'Product Price', 'Customer Age', 'Gender', 'Returns']]
     y = supervised_df['Churn']
 
+    from sklearn.model_selection import train_test_split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    smote = SMOTE(random_state=42)
-    X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
-
-    scaler = joblib.load('scaler_logreg.pkl')
-    logreg = joblib.load('logreg_model.pkl')
-
+    # Scaling menggunakan scaler yang sudah dimuat
     X_test_scaled = scaler.transform(X_test)
 
     y_pred = logreg_model.predict(X_test_scaled)
-    y_proba = logreg_model.predict_proba(X_test_scaled)[:,1]
+    y_proba = logreg_model.predict_proba(X_test_scaled)[:, 1]
 
     # Confusion matrix
     cm = confusion_matrix(y_test, y_pred)
@@ -113,11 +106,15 @@ df = load_data()
 # Sidebar filter
 st.sidebar.header("Filter Data")
 gender_filter = st.sidebar.multiselect("Gender", options=df['Gender'].unique(), default=df['Gender'].unique())
-payment_filter = st.sidebar.multiselect("Metode Pembayaran", options=df['Payment Method'].unique() if 'Payment Method' in df.columns else [], default=df['Payment Method'].unique() if 'Payment Method' in df.columns else [])
-category_filter = st.sidebar.multiselect("Kategori Produk", options=df['Product Category'].unique() if 'Product Category' in df.columns else [], default=df['Product Category'].unique() if 'Product Category' in df.columns else [])
+
+payment_options = df['Payment Method'].unique() if 'Payment Method' in df.columns else []
+payment_filter = st.sidebar.multiselect("Metode Pembayaran", options=payment_options, default=payment_options)
+
+category_options = df['Product Category'].unique() if 'Product Category' in df.columns else []
+category_filter = st.sidebar.multiselect("Kategori Produk", options=category_options, default=category_options)
 
 filtered_df = df[
-    (df['Gender'].isin(gender_filter)) & 
+    (df['Gender'].isin(gender_filter)) &
     ((df['Payment Method'].isin(payment_filter)) if 'Payment Method' in df.columns else True) &
     ((df['Product Category'].isin(category_filter)) if 'Product Category' in df.columns else True)
 ]
@@ -130,16 +127,16 @@ churn_counts = filtered_df['Churn'].value_counts(normalize=True) if 'Churn' in f
 st.markdown(f"- **Jumlah Total Pelanggan:** {total_customers}")
 st.markdown(f"- **Rata-rata Total Pembelian:** Rp {avg_purchase:,.2f}")
 if churn_counts is not None:
-    st.markdown(f"- **Rasio Pelanggan Churn:** {churn_counts.get(1,0)*100:.2f}%")
-    st.markdown(f"- **Rasio Pelanggan Tidak Churn:** {churn_counts.get(0,0)*100:.2f}%")
+    st.markdown(f"- **Rasio Pelanggan Churn:** {churn_counts.get(1, 0) * 100:.2f}%")
+    st.markdown(f"- **Rasio Pelanggan Tidak Churn:** {churn_counts.get(0, 0) * 100:.2f}%")
 
 # Segmentasi Pelanggan
 st.header("Segmentasi Pelanggan (Clustering)")
 
-df_clustered, kmeans = preprocess_and_cluster(filtered_df)
+df_clustered = preprocess_and_cluster(filtered_df)
 
 # Scatter plot cluster
-fig, ax = plt.subplots(figsize=(10,6))
+fig, ax = plt.subplots(figsize=(10, 6))
 sns.scatterplot(data=df_clustered, x='Customer Age', y='Total Purchase Amount', hue='Spending Cluster', palette='tab10', ax=ax)
 ax.set_title("Segmentasi Pelanggan Berdasarkan Usia dan Total Pembelian")
 st.pyplot(fig)
@@ -157,7 +154,7 @@ segmen_desc = df_clustered.groupby('Spending Cluster').agg({
 st.dataframe(segmen_desc)
 
 # Distribusi usia dan pengeluaran per segmen
-fig2, axes = plt.subplots(1, 2, figsize=(15,5))
+fig2, axes = plt.subplots(1, 2, figsize=(15, 5))
 sns.boxplot(x='Spending Cluster', y='Customer Age', data=df_clustered, ax=axes[0])
 axes[0].set_title('Distribusi Usia per Segmen')
 sns.boxplot(x='Spending Cluster', y='Total Purchase Amount', data=df_clustered, ax=axes[1])
@@ -171,10 +168,10 @@ metrics = load_model_and_predict(filtered_df)
 
 # Tabel prediksi churn dengan probabilitas (ambil sampel)
 prediksi_df = pd.DataFrame({
-    'Actual': metrics['y_test'],
+    'Actual': metrics['y_test'].reset_index(drop=True),
     'Predicted': metrics['y_pred'],
     'Probabilitas Churn': metrics['y_proba']
-}).reset_index(drop=True)
+})
 st.dataframe(prediksi_df.head(20))
 
 # Visualisasi Confusion Matrix
@@ -192,7 +189,7 @@ metrics_df = pd.DataFrame({
 
 fig4, ax4 = plt.subplots()
 sns.barplot(x='Metrik', y='Nilai', data=metrics_df, ax=ax4)
-ax4.set_ylim(0,1)
+ax4.set_ylim(0, 1)
 ax4.set_title("Perbandingan Metrik Evaluasi Model")
 st.pyplot(fig4)
 
@@ -205,7 +202,7 @@ if 'Order Date' in filtered_df.columns:
     st.line_chart(timeline)
 
 # Return rate berdasarkan segmen dan gender (jika tersedia)
-if 'Returns' in filtered_df.columns and 'Spending Cluster' in filtered_df.columns and 'Gender' in filtered_df.columns:
+if {'Returns', 'Spending Cluster', 'Gender'}.issubset(filtered_df.columns):
     st.header("Return Rate Berdasarkan Segmen dan Gender")
     return_rate = filtered_df.groupby(['Spending Cluster', 'Gender'])['Returns'].mean().reset_index()
     fig5, ax5 = plt.subplots()
