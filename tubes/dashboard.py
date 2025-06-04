@@ -7,6 +7,7 @@ import seaborn as sns
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 import joblib
 
+BASE_DIR = os.path.dirname(__file__)
 # -------------------------------------------------
 # Load data dan model (bisa modifikasi sesuai kebutuhan)
 @st.cache_data
@@ -14,9 +15,9 @@ def load_data():
     df = pd.read_csv('ecommerce_customer_data_custom_ratios.csv')
     return df
 
-kmeans = joblib.load('kmeans_model.pkl')
-logreg = joblib.load('logreg_model.pkl')
-scaler = joblib.load('scaler_logreg.pkl')
+kmeans_model = joblib.load(os.path.join(BASE_DIR, 'kmeans_model.pkl'))
+logreg_model = joblib.load(os.path.join(BASE_DIR, 'logreg_model.pkl'))
+scaler = joblib.load(os.path.join(BASE_DIR, 'scaler_logreg.pkl'))
 
 # -------------------------------------------------
 # Fungsi preprocessing & clustering
