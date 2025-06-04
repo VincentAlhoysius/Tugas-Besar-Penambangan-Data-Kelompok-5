@@ -1,4 +1,4 @@
-
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -47,8 +47,7 @@ def preprocess_and_cluster(df):
     scaled_features = scaler.fit_transform(unsupervised_df)
 
     # KMeans clustering
-    kmeans = joblib.load('kmeans_model.pkl')
-    clusters = kmeans.predict(scaled_features)
+    clusters = kmeans_model.predict(scaled_features)
     unsupervised_df['Spending Cluster'] = clusters
 
     # Gabungkan kembali ke df asli sesuai index
@@ -83,14 +82,14 @@ def load_model_and_predict(df):
 
     X_test_scaled = scaler.transform(X_test)
 
-    y_pred = logreg.predict(X_test_scaled)
-    y_proba = logreg.predict_proba(X_test_scaled)[:,1]
+    y_pred = logreg_model.predict(X_test_scaled)
+    y_proba = logreg_model.predict_proba(X_test_scaled)[:,1]
 
     # Confusion matrix
     cm = confusion_matrix(y_test, y_pred)
 
     metrics = {
-        'accuracy': logreg.score(X_test_scaled, y_test),
+        'accuracy': logreg_model.score(X_test_scaled, y_test),
         'precision': precision_score(y_test, y_pred),
         'recall': recall_score(y_test, y_pred),
         'f1': f1_score(y_test, y_pred),
